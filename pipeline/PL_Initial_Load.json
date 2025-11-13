@@ -75,7 +75,7 @@
 								"sink": {
 									"type": "AzureSqlSink",
 									"preCopyScript": {
-										"value": "@concat('Truncate Table ', item().TABLE_SCHEMA, '.',item().TABLE_NAME)",
+										"value": "@concat('DELETE FROM [', item().TABLE_SCHEMA, '].[',item().TABLE_NAME, ']')",
 										"type": "Expression"
 									},
 									"writeBehavior": "insert",
