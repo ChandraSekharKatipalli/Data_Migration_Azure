@@ -1,0 +1,39 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "adf-mydev-data-pipelines"
+		},
+		"AzureSqlDatabase1_password": {
+			"value": ""
+		},
+		"AzureSqlDatabase1_properties_typeProperties_server": {
+			"value": "sqlserver-mydev-cus.database.windows.net"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_database": {
+			"value": "AdventureWorks"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_userName": {
+			"value": "chandra-admin"
+		},
+		"SqlServerQuality_properties_typeProperties_server": {
+			"value": "DESKTOP-787K5FA\\QUALITY"
+		},
+		"SqlServerQuality_properties_typeProperties_database": {
+			"value": "AdventureWorks2022"
+		},
+		"SqlServerQuality_properties_typeProperties_userName": {
+			"value": "DESKTOP-787K5FA\\user"
+		},
+		"WindowAuth_properties_typeProperties_baseUrl": {
+			"value": "https://WindowAuth.vault.azure.net/"
+		},
+		"containerUri": {
+			"value": ""
+		},
+		"containerSasToken": {
+			"value": ""
+		}
+	}
+}
