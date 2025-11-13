@@ -223,7 +223,14 @@
 					{
 						"name": "LU_OnPrem_SchemaTable",
 						"type": "Lookup",
-						"dependsOn": [],
+						"dependsOn": [
+							{
+								"activity": "SP_Disable_Constraints",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
 						"policy": {
 							"timeout": "0.12:00:00",
 							"retry": 0,
@@ -264,7 +271,7 @@
 								"value": "@activity('LU_OnPrem_SchemaTable').output.value",
 								"type": "Expression"
 							},
-							"isSequential": true,
+							"isSequential": false,
 							"activities": [
 								{
 									"name": "OnPrem_Table",
@@ -286,6 +293,10 @@
 										},
 										"sink": {
 											"type": "AzureSqlSink",
+											"preCopyScript": {
+												"value": "@concat('Truncate table', item().TABLE_SCHEMA, '.',item().TABLE_NAME)",
+												"type": "Expression"
+											},
 											"writeBehavior": "insert",
 											"sqlWriterUseTableLock": false
 										},
@@ -334,6 +345,65 @@
 								}
 							]
 						}
+					},
+					{
+						"name": "SP_Disable_Constraints",
+						"type": "Script",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "AzureSqlDatabase1",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": "DECLARE @sql NVARCHAR(MAX) = N'';\n\n-- This query builds a single long string of all the 'disable' commands\nSELECT @sql += N'ALTER TABLE ' \n    + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) \n    + N' NOCHECK CONSTRAINT ALL;' + CHAR(13)\nFROM \n    sys.tables t\nINNER JOIN \n    sys.schemas s ON t.schema_id = s.schema_id\nWHERE \n    t.is_ms_shipped = 0; -- Only get user tables\n\n-- Print (for logging in ADF) and execute the built string\nPRINT @sql;\nEXEC sp_executesql @sql;"
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					},
+					{
+						"name": "SP_Enable_Constraints",
+						"type": "Script",
+						"dependsOn": [
+							{
+								"activity": "FE_OnPrem_Table",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "AzureSqlDatabase1",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": "DECLARE @sql NVARCHAR(MAX) = N'';\n\n-- This query builds a single long string of all the 'enable' commands\nSELECT @sql += N'ALTER TABLE ' \n    + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) \n    + N' WITH CHECK CHECK CONSTRAINT ALL;' + CHAR(13)\nFROM \n    sys.tables t\nINNER JOIN \n    sys.schemas s ON t.schema_id = s.schema_id\nWHERE \n    t.is_ms_shipped = 0; -- Only get user tables\n\n-- Print (for logging in ADF) and execute the built string\nPRINT @sql;\nEXEC sp_executesql @sql;"
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
 					}
 				],
 				"policy": {
@@ -343,6 +413,7 @@
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/OnPrem_AW')]",
+				"[concat(variables('factoryId'), '/linkedServices/AzureSqlDatabase1')]",
 				"[concat(variables('factoryId'), '/datasets/DS_Param_OnPremSQL_Table')]",
 				"[concat(variables('factoryId'), '/datasets/DS_Param_AzureSQL_Table')]"
 			]
