@@ -162,7 +162,7 @@
 				"type": "Script",
 				"dependsOn": [
 					{
-						"activity": "FE_OnPrem_Table",
+						"activity": "FE_Validation",
 						"dependencyConditions": [
 							"Succeeded"
 						]
@@ -188,6 +188,123 @@
 						}
 					],
 					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "FE_Validation",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "FE_OnPrem_Table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LU_OnPrem_SchemaTable').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "LU_OnPrem_Count",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT COUNT_BIG(*) AS RowCount FROM [', item().TABLE_SCHEMA, '].[', item().TABLE_NAME, ']')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "OnPrem_AW",
+									"type": "DatasetReference"
+								}
+							}
+						},
+						{
+							"name": "LU_AzureDB_Count",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT COUNT_BIG(*) AS RowCount FROM [', item().TABLE_SCHEMA, '].[', item().TABLE_NAME, ']')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "AzureSqlTable1",
+									"type": "DatasetReference"
+								}
+							}
+						},
+						{
+							"name": "IF_Count",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "LU_OnPrem_Count",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								},
+								{
+									"activity": "LU_AzureDB_Count",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(activity('LU_OnPrem_Count').output.firstRow.RowCount,\nactivity('LU_AzureDB_Count').output.firstRow.RowCount)",
+									"type": "Expression"
+								},
+								"ifFalseActivities": [
+									{
+										"name": "Validation_Fail",
+										"type": "Fail",
+										"dependsOn": [],
+										"userProperties": [],
+										"typeProperties": {
+											"message": {
+												"value": "@concat(\n    'Validation Failed for table: ',\n    item().TABLE_SCHEMA,\n    '.',\n    item().TABLE_NAME,\n    '. Source rows: ',\n    activity('LU_OnPrem_Count').output.firstRow.RowCount,\n    ', Sink rows: ',\n    activity('LU_AzureDB_Count').output.firstRow.RowCount\n)",
+												"type": "Expression"
+											},
+											"errorCode": "Validation Failed"
+										}
+									}
+								]
+							}
+						}
+					]
 				}
 			}
 		],
