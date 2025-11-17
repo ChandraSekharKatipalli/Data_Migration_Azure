@@ -1,0 +1,29 @@
+{
+	"name": "SqlServerQuality",
+	"properties": {
+		"description": "local sql server",
+		"annotations": [],
+		"type": "SqlServer",
+		"typeProperties": {
+			"server": "DESKTOP-787K5FA\\QUALITY",
+			"database": "AdventureWorks2022",
+			"encrypt": "mandatory",
+			"trustServerCertificate": true,
+			"authenticationType": "Windows",
+			"userName": "DESKTOP-787K5FA\\user",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "WindowAuth",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "WindowAuth",
+				"secretVersion": "1a4fe5c047e347b6a8f64e602fd29458"
+			}
+		},
+		"connectVia": {
+			"referenceName": "SqlServerQualitySHIR",
+			"type": "IntegrationRuntimeReference"
+		}
+	}
+}

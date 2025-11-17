@@ -1,0 +1,7 @@
+{
+	"name": "SqlServerQualitySHIR",
+	"properties": {
+		"type": "SelfHosted",
+		"description": "local sql server SHIR"
+	}
+}

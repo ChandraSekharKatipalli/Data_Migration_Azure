@@ -1,0 +1,11 @@
+{
+	"name": "WindowAuth",
+	"properties": {
+		"description": "for sql server authentication",
+		"annotations": [],
+		"type": "AzureKeyVault",
+		"typeProperties": {
+			"baseUrl": "https://WindowAuth.vault.azure.net/"
+		}
+	}
+}

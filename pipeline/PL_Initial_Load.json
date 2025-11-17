@@ -1,0 +1,313 @@
+{
+	"name": "PL_Initial_Load",
+	"properties": {
+		"activities": [
+			{
+				"name": "LU_OnPrem_SchemaTable",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SP_Disable_Constraints",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": "SELECT\n    s.name AS TABLE_SCHEMA,\n    t.name AS TABLE_NAME,\n    -- This subquery builds the comma-separated column list\n    LEFT(\n        (\n            SELECT\n                QUOTENAME(c.name) + ','\n            FROM\n                sys.columns c\n            WHERE\n                c.object_id = t.object_id\n                AND c.is_computed = 0 -- The correct column from sys.columns\n            ORDER BY\n                c.column_id -- Use column_id for ordering\n            FOR XML PATH('')\n        ),\n        -- This part removes the final trailing comma\n        LEN(\n            (\n                SELECT\n                    QUOTENAME(c.name) + ','\n                FROM\n                    sys.columns c\n                WHERE\n                    c.object_id = t.object_id\n                    AND c.is_computed = 0\n                ORDER BY\n                    c.column_id\n                FOR XML PATH('')\n            )\n        ) - 1\n    ) AS ColumnList\nFROM\n    sys.tables t\nINNER JOIN\n    sys.schemas s ON t.schema_id = s.schema_id\nWHERE\n    t.type = 'U' -- 'U' = User Table\n    AND s.name IN ('Sales', 'Person', 'Production', 'HumanResources', 'Purchasing')",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "OnPrem_AW",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "FE_OnPrem_Table",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "LU_OnPrem_SchemaTable",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LU_OnPrem_SchemaTable').output.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "OnPrem_Table",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT ', item().ColumnList, ' FROM [', item().TABLE_SCHEMA, '].[', item().TABLE_NAME, ']')  ",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"preCopyScript": {
+										"value": "@concat('DELETE FROM [', item().TABLE_SCHEMA, '].[',item().TABLE_NAME, ']')",
+										"type": "Expression"
+									},
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_Param_OnPremSQL_Table",
+									"type": "DatasetReference",
+									"parameters": {
+										"SchemaName": {
+											"value": "@item().TABLE_SCHEMA",
+											"type": "Expression"
+										},
+										"TableName": {
+											"value": "@item().TABLE_NAME",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_Param_AzureSQL_Table",
+									"type": "DatasetReference",
+									"parameters": {
+										"SchemaName": {
+											"value": "@item().TABLE_SCHEMA",
+											"type": "Expression"
+										},
+										"TableName": {
+											"value": "@item().TABLE_NAME",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			},
+			{
+				"name": "SP_Disable_Constraints",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": "DECLARE @sql NVARCHAR(MAX) = N'';\n\n-- This query builds a single long string of all the 'disable' commands\nSELECT @sql += N'ALTER TABLE ' \n    + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) \n    + N' NOCHECK CONSTRAINT ALL;' + CHAR(13)\nFROM \n    sys.tables t\nINNER JOIN \n    sys.schemas s ON t.schema_id = s.schema_id\nWHERE \n    t.is_ms_shipped = 0; -- Only get user tables\n\n-- Print (for logging in ADF) and execute the built string\nPRINT @sql;\nEXEC sp_executesql @sql;"
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "SP_Enable_Constraints",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "FE_Validation",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase1",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": "DECLARE @sql NVARCHAR(MAX) = N'';\n\n-- This query builds a single long string of all the 'enable' commands\nSELECT @sql += N'ALTER TABLE ' \n    + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) \n    + N' WITH CHECK CHECK CONSTRAINT ALL;' + CHAR(13)\nFROM \n    sys.tables t\nINNER JOIN \n    sys.schemas s ON t.schema_id = s.schema_id\nWHERE \n    t.is_ms_shipped = 0; -- Only get user tables\n\n-- Print (for logging in ADF) and execute the built string\nPRINT @sql;\nEXEC sp_executesql @sql;"
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "FE_Validation",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "FE_OnPrem_Table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LU_OnPrem_SchemaTable').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "LU_OnPrem_Count",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT COUNT_BIG(*) AS [RowCount] FROM [', item().TABLE_SCHEMA, '].[', item().TABLE_NAME, ']')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "OnPrem_AW",
+									"type": "DatasetReference"
+								}
+							}
+						},
+						{
+							"name": "LU_AzureDB_Count",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('SELECT COUNT_BIG(*) AS [RowCount] FROM [', item().TABLE_SCHEMA, '].[', item().TABLE_NAME, ']')",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "AzureSqlTable1",
+									"type": "DatasetReference"
+								}
+							}
+						},
+						{
+							"name": "IF_Count",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "LU_OnPrem_Count",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								},
+								{
+									"activity": "LU_AzureDB_Count",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(activity('LU_OnPrem_Count').output.firstRow.RowCount,\nactivity('LU_AzureDB_Count').output.firstRow.RowCount)",
+									"type": "Expression"
+								},
+								"ifFalseActivities": [
+									{
+										"name": "Validation_Fail",
+										"type": "Fail",
+										"dependsOn": [],
+										"userProperties": [],
+										"typeProperties": {
+											"message": {
+												"value": "@concat(\n    'Validation Failed for table: ',\n    item().TABLE_SCHEMA,\n    '.',\n    item().TABLE_NAME,\n    '. Source rows: ',\n    activity('LU_OnPrem_Count').output.firstRow.RowCount,\n    ', Sink rows: ',\n    activity('LU_AzureDB_Count').output.firstRow.RowCount\n)",
+												"type": "Expression"
+											},
+											"errorCode": "Validation Failed"
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"annotations": []
+	}
+}

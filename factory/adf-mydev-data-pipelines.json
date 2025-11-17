@@ -1,0 +1,9 @@
+{
+	"name": "adf-mydev-data-pipelines",
+	"location": "centralus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "d12eaa9b-2fa7-468d-82bc-1351476be30e",
+		"tenantId": "be978da3-76bb-46eb-8319-39f5f61f0ec8"
+	}
+}
